@@ -9,6 +9,7 @@ using System.Linq;
 using MyDocuments.Utilities;
 using System.Net.Mail;
 using System.Net;
+using System.Net.Mime;
 
 namespace MyDocuments.Controllers
 {
@@ -146,68 +147,85 @@ namespace MyDocuments.Controllers
                         Directory.CreateDirectory(path);
                     }
 
-                    //send mail after uploading
-                    string senderMail = "no_reply@elaundry.ng";
+                    //Upload files
+                    List<string> uploadedFiles = new List<string>();
+                    foreach (IFormFile UploadFile in uploadFiles)
+                    {
+                        string fileName = Path.GetFileName(UploadFile.FileName);
+                        string fileType = Path.GetFileName(UploadFile.ContentType);
+
+                        //checking for duplicate file
+                        //var checkDublicate = db.Files.Where(y => y.Email == UserEmail && y.FileTitle == fileName).Count();
+                        /*
+                        if(checkDublicate > 0)
+                        {
+                            ViewBag.Status = 0;
+                            ViewBag.Message += string.Format("{0} {1} file already uploaded", fileName, fileType);
+                            return View();
+                        }
+                        */
+
+
+
+                        using (FileStream stream = new FileStream(Path.Combine(path, fileName), FileMode.Create))
+                        {
+                            UploadFile.CopyTo(stream);
+                            uploadedFiles.Add(fileName);
+
+
+                            try
+                            {
+                                int max = db.Files.Max(p => p.Id);
+                                pk = max + 1;
+
+                            }
+                            catch (Exception)
+                            {
+                                pk = 1;
+                            }
+                            files.TransactionReference = TransactionId;
+                            files.FileType = fileType;
+                            files.FilePath = stream.Name;
+                            files.Id = pk;
+                            files.FileTitle = fileName;
+                            files.Status = 1;
+                            files.Email = user.Email;
+                            files.UserId = user.Id;
+
+                            //save files
+                            db.Files.Add(files);
+                            db.SaveChanges();
+
+                            ViewBag.Status = 1;
+                            ViewBag.Message += string.Format("{0} UPLOADED!<br>", fileName);
+                        }
+
+                    }
+
+                    
+                    string senderMail = ""; //username
+                    string senderPassword = ""; //email password
+                    string mailerHost = " "; //email host
+                    int mailerPort = 26; //your email port
+                    bool enableSSl = false; //true or false
+
                     using (MailMessage mail = new MailMessage(senderMail, UserEmail))
                     {
-
-                        string senderPassword = "fOfY?5+O2]b.";
-                        string mailerHost = "mail.elaundry.ng";
-                        int mailerPort = 587;
-                        //MailMessage mail = new MailMessage(senderMail, UserEmail);
                         mail.Subject = "Document Uploads";
                         mail.Body = "Find the attached document";
 
-                        List<string> uploadedFiles = new List<string>();
                         foreach (IFormFile UploadFile in uploadFiles)
                         {
                             string fileName = Path.GetFileName(UploadFile.FileName);
                             string fileType = Path.GetFileName(UploadFile.ContentType);
-                            // string filePath = Path.GetFileName(UploadFile.OpenReadStream.);
-                            //var checkDublicate = db.Files.Where(y => y.Email == UserEmail && y.FileTitle == fileName).Count();
-                            /*
-                            if(checkDublicate > 0)
-                            {
-                                ViewBag.Status = 0;
-                                ViewBag.Message += string.Format("{0} {1} file already uploaded", fileName, fileType);
-                                return View();
-                            }
-                            */
-                            using (FileStream stream = new FileStream(Path.Combine(path, fileName), FileMode.Create))
-                            {
-                                UploadFile.CopyTo(stream);
-                                uploadedFiles.Add(fileName);
-                                mail.Attachments.Add(new Attachment(stream, fileName));
-                                try
-                                {
-                                    int max = db.Files.Max(p => p.Id);
-                                    pk = max + 1;
+                            string fullPath = Path.Combine(path, fileName);
+                            string fileNameFromPath = Path.GetFileName(fullPath);
 
-                                }
-                                catch (Exception)
-                                {
-                                    pk = 1;
-                                }
-                                files.TransactionReference = TransactionId;
-                                files.FileType = fileType;
-                                files.FilePath = stream.Name;
-                                files.Id = pk;
-                                files.FileTitle = fileName;
-                                files.Status = 1;
-                                files.Email = user.Email;
-                                files.UserId = user.Id;
-
-                                //save files
-                                db.Files.Add(files);
-                                db.SaveChanges();
-
-                                ViewBag.Status = 1;
-                                ViewBag.Message += string.Format("{0} UPLOADED!<br>", fileName);
-                            }
-
-
+                            var fileForEmail = new FileStream(fullPath, FileMode.Open, FileAccess.Read);
+                            mail.Attachments.Add(new Attachment(fileForEmail, fileName, MediaTypeNames.Application.Octet));
 
                         }
+
                         //sending mail
                         try
                         {
@@ -215,9 +233,9 @@ namespace MyDocuments.Controllers
                             using (SmtpClient smtp = new SmtpClient())
                             {
                                 smtp.Host = mailerHost;
-                                smtp.EnableSsl = true;
+                                smtp.EnableSsl = enableSSl;
                                 NetworkCredential networkCredential = new NetworkCredential(senderMail, senderPassword);
-                                smtp.UseDefaultCredentials = true;
+                                smtp.UseDefaultCredentials = false;
                                 smtp.Credentials = networkCredential;
                                 smtp.Port = mailerPort;
                                 smtp.Send(mail);
